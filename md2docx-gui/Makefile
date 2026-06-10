@@ -1,4 +1,4 @@
-BIN     := docx2pdf-gui
+BIN     := md2docx-gui
 LDFLAGS := -s -w
 
 .PHONY: build install release clean
