@@ -100,13 +100,18 @@ chmod +x "$BUILD_DIR/pandoc-universal"
 ok "Pandoc universal binary ready ($(du -sh "$BUILD_DIR/pandoc-universal" | cut -f1))"
 
 step "── 3 / 5  Assemble .app bundle ─────────────────────────────────────"
+
+log "Generating app icon…"
+python3 "$REPO_ROOT/scripts/make-icon.py" "$BUILD_DIR/md2docx.icns"
+
 APP_BUNDLE="$BUILD_DIR/${APP_NAME}.app"
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-cp "$BUILD_DIR/${APP_NAME}-universal" "$APP_BUNDLE/Contents/MacOS/${APP_NAME}"
-cp "$BUILD_DIR/pandoc-universal"      "$APP_BUNDLE/Contents/MacOS/pandoc"
+cp "$BUILD_DIR/${APP_NAME}-universal"  "$APP_BUNDLE/Contents/MacOS/${APP_NAME}"
+cp "$BUILD_DIR/pandoc-universal"       "$APP_BUNDLE/Contents/MacOS/pandoc"
+cp "$BUILD_DIR/md2docx.icns"          "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -115,6 +120,7 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 <dict>
     <key>CFBundleDisplayName</key>   <string>md2docx</string>
     <key>CFBundleExecutable</key>    <string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key>      <string>AppIcon</string>
     <key>CFBundleIdentifier</key>    <string>${BUNDLE_ID}</string>
     <key>CFBundleName</key>          <string>md2docx</string>
     <key>CFBundlePackageType</key>   <string>APPL</string>
@@ -133,53 +139,27 @@ ok "App bundle ready  →  $APP_BUNDLE"
 
 step "── 4 / 5  Create DMG ───────────────────────────────────────────────"
 DMG_FINAL="$DIST_DIR/${APP_NAME}-${VERSION}.dmg"
-DMG_TMP="/tmp/${APP_NAME}-rw.dmg"
-VOLUME_NAME="md2docx ${VERSION}"
-MOUNT_POINT="/Volumes/${VOLUME_NAME}"
+STAGING="$BUILD_DIR/dmg-staging"
+VOLUME_NAME="md2docx"
 
-rm -f "$DMG_TMP" "$DMG_FINAL"
+rm -f "$DMG_FINAL"
+rm -rf "$STAGING"
+mkdir -p "$STAGING"
 
-# Create a writable image, size slightly larger than app
-APP_MB=$(du -sm "$APP_BUNDLE" | cut -f1)
-DMG_MB=$(( APP_MB + 30 ))
+# Populate staging folder — hdiutil reads from here directly (no mount/unmount)
+cp -r "$APP_BUNDLE" "$STAGING/"
+ln -s /Applications "$STAGING/Applications"
 
+# Build compressed DMG straight from the folder — no writable intermediate
 hdiutil create \
-  -size "${DMG_MB}m" \
-  -fs HFS+ \
   -volname "$VOLUME_NAME" \
-  "$DMG_TMP" > /dev/null
-
-hdiutil attach "$DMG_TMP" -mountpoint "$MOUNT_POINT" > /dev/null
-
-cp -r "$APP_BUNDLE" "$MOUNT_POINT/"
-ln -s /Applications "$MOUNT_POINT/Applications"
-
-# Tell Finder to show the window nicely (best-effort — fails silently without Finder)
-osascript << ASCRIPT 2>/dev/null || true
-tell application "Finder"
-  tell disk "${VOLUME_NAME}"
-    open
-    set current view of container window to icon view
-    set toolbar visible of container window to false
-    set statusbar visible of container window to false
-    set the bounds of container window to {200, 200, 720, 440}
-    set icon size of icon view options of container window to 100
-    set arrangement of icon view options of container window to not arranged
-    set position of item "md2docx.app" of container window to {130, 120}
-    set position of item "Applications" of container window to {390, 120}
-    close
-  end tell
-end tell
-ASCRIPT
-
-hdiutil detach "$MOUNT_POINT" > /dev/null
-
-log "Compressing DMG…"
-hdiutil convert "$DMG_TMP" \
+  -srcfolder "$STAGING" \
+  -ov \
   -format UDZO \
   -imagekey zlib-level=9 \
-  -o "$DMG_FINAL" > /dev/null
-rm "$DMG_TMP"
+  "$DMG_FINAL" > /dev/null
+
+rm -rf "$STAGING"
 ok "DMG ready  →  $DMG_FINAL  ($(du -sh "$DMG_FINAL" | cut -f1))"
 
 step "── 5 / 5  Done ─────────────────────────────────────────────────────"
