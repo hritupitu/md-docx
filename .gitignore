@@ -1,0 +1,7 @@
+# compiled binaries
+md2docx/md2docx
+md2docx/docx2pdf
+md2docx-gui/md2docx-gui
+md2docx-gui/docx2pdf-gui
+md2docx/dist/
+md2docx-gui/dist/

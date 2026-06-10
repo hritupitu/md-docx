@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>md2docx</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0d0d0d;
+      --surface: #161616;
+      --border:  #2a2a2a;
+      --accent:  #00d4ff;
+      --text:    #e8e8e8;
+      --muted:   #555;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --yellow:  #f59e0b;
+      --radius:  12px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 15px;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 48px 20px 80px;
+    }
+
+    /* header */
+    header { text-align: center; margin-bottom: 36px; }
+    header h1 { font-size: 26px; font-weight: 700; color: var(--accent); letter-spacing: -0.5px; }
+    header p  { margin-top: 6px; color: var(--muted); font-size: 13px; }
+    #pandoc-badge {
+      display: inline-block;
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+    }
+    #pandoc-badge.ok  { border-color: var(--green); color: var(--green); }
+    #pandoc-badge.bad { border-color: var(--red);   color: var(--red); }
+
+    /* warning */
+    #dep-warning {
+      display: none;
+      width: 100%; max-width: 560px;
+      background: #1a1200;
+      border: 1px solid var(--yellow);
+      border-radius: var(--radius);
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: var(--yellow);
+      line-height: 1.6;
+    }
+    #dep-warning code {
+      background: #2a2000;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-family: monospace;
+    }
+
+    /* drop zone */
+    #drop-zone {
+      width: 100%; max-width: 560px;
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative;
+    }
+    #drop-zone:hover, #drop-zone.over {
+      border-color: var(--accent);
+      background: rgba(0,212,255,.04);
+    }
+    #drop-zone input[type="file"] {
+      position: absolute; inset: 0;
+      opacity: 0; cursor: pointer;
+      width: 100%; height: 100%;
+    }
+    .drop-icon  { font-size: 36px; margin-bottom: 12px; display: block; }
+    .drop-title { font-size: 15px; font-weight: 600; }
+    .drop-sub   { margin-top: 5px; font-size: 12px; color: var(--muted); }
+
+    /* reference doc */
+    #ref-wrap { width: 100%; max-width: 560px; margin-top: 12px; }
+    #ref-label {
+      display: flex; align-items: center; gap: 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 13px; color: var(--muted);
+      transition: border-color .2s, color .2s;
+    }
+    #ref-label:hover { border-color: var(--accent); color: var(--text); }
+    #ref-label.active { border-color: var(--accent); color: var(--text); }
+    #ref-input { display: none; }
+    #ref-name { flex: 1; }
+
+    /* file list */
+    #file-list {
+      width: 100%; max-width: 560px;
+      margin-top: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+
+    .file-row {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      transition: border-color .2s;
+    }
+    .file-row.done   { border-color: var(--green); }
+    .file-row.error  { border-color: var(--red); }
+    .file-row.active { border-color: var(--accent); }
+
+    .file-icon { font-size: 18px; flex-shrink: 0; }
+    .file-name { flex: 1; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-status { flex-shrink: 0; font-size: 13px; color: var(--muted); }
+    .file-row.done  .file-status { color: var(--green); }
+    .file-row.error .file-status { color: var(--red); }
+    .file-row.active .file-status { color: var(--accent); }
+
+    .download-btn {
+      flex-shrink: 0;
+      background: var(--green); color: #000;
+      border: none; border-radius: 6px;
+      padding: 5px 12px; font-size: 12px; font-weight: 600;
+      cursor: pointer; text-decoration: none; display: inline-block;
+      transition: opacity .15s;
+    }
+    .download-btn:hover { opacity: .85; }
+
+    .remove-btn {
+      flex-shrink: 0; background: none; border: none;
+      color: var(--muted); cursor: pointer;
+      font-size: 16px; line-height: 1; padding: 2px 4px;
+      border-radius: 4px; transition: color .15s;
+    }
+    .remove-btn:hover { color: var(--red); }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* actions */
+    #actions { width: 100%; max-width: 560px; margin-top: 16px; display: flex; gap: 10px; }
+    #convert-btn {
+      flex: 1; background: var(--accent); color: #000;
+      border: none; border-radius: 8px;
+      padding: 13px 20px; font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: opacity .15s;
+    }
+    #convert-btn:hover:not(:disabled) { opacity: .88; }
+    #convert-btn:disabled { opacity: .3; cursor: not-allowed; }
+    #clear-btn {
+      background: var(--surface); color: var(--muted);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 13px 16px; font-size: 14px; cursor: pointer;
+      transition: color .15s, border-color .15s;
+    }
+    #clear-btn:hover { color: var(--text); border-color: var(--muted); }
+
+    /* download all */
+    #download-all-btn {
+      display: none;
+      width: 100%; max-width: 560px;
+      margin-top: 10px;
+      background: var(--surface); color: var(--green);
+      border: 1px solid var(--green); border-radius: 8px;
+      padding: 11px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background .15s;
+    }
+    #download-all-btn:hover { background: rgba(34,197,94,.08); }
+
+    /* footer */
+    footer {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      text-align: center; padding: 11px;
+      font-size: 12px; color: var(--muted);
+      background: var(--bg); border-top: 1px solid var(--border);
+    }
+    footer span { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>md2docx</h1>
+  <p>Convert Markdown files to Word documents — locally, no cloud.</p>
+  <div id="pandoc-badge">checking pandoc…</div>
+</header>
+
+<div id="dep-warning"></div>
+
+<div id="drop-zone">
+  <input type="file" id="file-input" multiple accept=".md,.markdown" />
+  <span class="drop-icon">📝</span>
+  <div class="drop-title">Drop .md files here</div>
+  <div class="drop-sub">or click to browse</div>
+</div>
+
+<div id="ref-wrap">
+  <label id="ref-label" for="ref-input">
+    <span>📎</span>
+    <span id="ref-name">Optional: attach a reference .docx to use its Word styles &amp; fonts</span>
+    <span id="ref-clear" style="display:none; color:var(--red); font-size:12px;" onclick="clearRef(event)">✕ remove</span>
+  </label>
+  <input type="file" id="ref-input" accept=".docx" />
+</div>
+
+<div id="file-list"></div>
+
+<div id="actions" style="display:none">
+  <button id="convert-btn">Convert to DOCX</button>
+  <button id="clear-btn">Clear</button>
+</div>
+
+<button id="download-all-btn">⬇ Download all DOCX files</button>
+
+<footer>Fully local · powered by <span>Pandoc</span> · close this tab to quit</footer>
+
+<script>
+  let files = [];
+  let refFile = null;
+  let converting = false;
+  let downloadTokens = [];
+
+  setInterval(() => fetch('/heartbeat', { method: 'POST' }).catch(() => {}), 4000);
+
+  (async () => {
+    const badge = document.getElementById('pandoc-badge');
+    try {
+      const d = await (await fetch('/check')).json();
+      if (d.ok) {
+        badge.textContent = `pandoc ${d.version}`;
+        badge.className = 'ok';
+      } else {
+        badge.textContent = 'pandoc not found';
+        badge.className = 'bad';
+        const warn = document.getElementById('dep-warning');
+        warn.style.display = 'block';
+        warn.innerHTML = `<strong>⚠ Pandoc not installed</strong><br>Install it, then reopen this app:<br><code>${esc(d.hint)}</code>`;
+      }
+    } catch { badge.textContent = 'could not check'; }
+  })();
+
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('file-input');
+
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.classList.remove('over'); addFiles([...e.dataTransfer.files]); });
+  fileInput.addEventListener('change', () => { addFiles([...fileInput.files]); fileInput.value = ''; });
+
+  function addFiles(newFiles) {
+    const valid = newFiles.filter(f => f.name.match(/\.(md|markdown)$/i));
+    const existing = new Set(files.map(f => f.name));
+    valid.forEach(f => { if (!existing.has(f.name)) files.push(f); });
+    render();
+  }
+
+  document.getElementById('ref-input').addEventListener('change', function() {
+    if (this.files[0]) {
+      refFile = this.files[0];
+      document.getElementById('ref-name').textContent = '📄 ' + refFile.name;
+      document.getElementById('ref-label').classList.add('active');
+      document.getElementById('ref-clear').style.display = '';
+    }
+    this.value = '';
+  });
+
+  function clearRef(e) {
+    e.preventDefault();
+    refFile = null;
+    document.getElementById('ref-name').textContent = 'Optional: attach a reference .docx to use its Word styles & fonts';
+    document.getElementById('ref-label').classList.remove('active');
+    document.getElementById('ref-clear').style.display = 'none';
+  }
+
+  function render() {
+    const list = document.getElementById('file-list');
+    list.innerHTML = '';
+    downloadTokens = [];
+    files.forEach((f, i) => {
+      const row = document.createElement('div');
+      row.className = 'file-row';
+      row.id = `row-${i}`;
+      row.innerHTML = `
+        <span class="file-icon">📝</span>
+        <span class="file-name">${esc(f.name)}</span>
+        <span class="file-status" id="status-${i}">ready</span>
+        <button class="remove-btn" onclick="removeFile(${i})" title="Remove">✕</button>`;
+      list.appendChild(row);
+    });
+    document.getElementById('actions').style.display = files.length ? 'flex' : 'none';
+    document.getElementById('convert-btn').disabled = converting || files.length === 0;
+    document.getElementById('download-all-btn').style.display = 'none';
+  }
+
+  function removeFile(i) { if (!converting) { files.splice(i, 1); render(); } }
+
+  document.getElementById('convert-btn').addEventListener('click', startConvert);
+  document.getElementById('clear-btn').addEventListener('click', () => { if (!converting) { files = []; render(); } });
+
+  async function startConvert() {
+    if (converting || files.length === 0) return;
+    converting = true;
+    downloadTokens = [];
+    document.getElementById('convert-btn').disabled = true;
+    document.getElementById('clear-btn').disabled = true;
+    document.getElementById('download-all-btn').style.display = 'none';
+    files.forEach((_, i) => setStatus(i, 'queued', '—'));
+
+    const form = new FormData();
+    files.forEach(f => form.append('files', f));
+    if (refFile) form.append('ref', refFile);
+
+    let jobId;
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(await res.text());
+      ({ jobId } = await res.json());
+    } catch (err) {
+      alert('Upload failed: ' + err.message);
+      converting = false; render(); return;
+    }
+
+    const nameToIdx = {};
+    files.forEach((f, i) => nameToIdx[f.name] = i);
+    setStatus(0, 'active', ''); addSpinner(0);
+
+    let fileIdx = 0;
+    const es = new EventSource(`/events?job=${jobId}`);
+
+    es.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'fatal') {
+        es.close(); alert(msg.message);
+        converting = false;
+        document.getElementById('clear-btn').disabled = false;
+        document.getElementById('convert-btn').disabled = false;
+        return;
+      }
+      if (msg.type === 'converted') {
+        const idx = nameToIdx[msg.file] ?? fileIdx;
+        setStatus(idx, 'done', '✔'); addDownloadBtn(idx, msg.token, msg.docx);
+        downloadTokens.push({ name: msg.docx, token: msg.token });
+        fileIdx++;
+        if (fileIdx < files.length) { setStatus(fileIdx, 'active', ''); addSpinner(fileIdx); }
+      }
+      if (msg.type === 'error') {
+        const idx = nameToIdx[msg.file] ?? fileIdx;
+        setStatus(idx, 'error', msg.error || 'failed');
+        fileIdx++;
+        if (fileIdx < files.length) { setStatus(fileIdx, 'active', ''); addSpinner(fileIdx); }
+      }
+      if (msg.type === 'complete') {
+        es.close(); converting = false;
+        document.getElementById('clear-btn').disabled = false;
+        document.getElementById('convert-btn').disabled = files.length === 0;
+        if (downloadTokens.length > 1) document.getElementById('download-all-btn').style.display = 'block';
+      }
+    };
+    es.onerror = () => { es.close(); converting = false; document.getElementById('clear-btn').disabled = false; };
+  }
+
+  document.getElementById('download-all-btn').addEventListener('click', () => {
+    downloadTokens.forEach(({ token, name }) => {
+      const a = Object.assign(document.createElement('a'), { href: `/download?token=${token}`, download: name });
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    });
+  });
+
+  function setStatus(i, state, text) {
+    document.getElementById(`row-${i}`)?.setAttribute('class', 'file-row ' + state);
+    const s = document.getElementById(`status-${i}`);
+    if (s && text !== undefined) s.textContent = text;
+  }
+  function addSpinner(i) {
+    const s = document.getElementById(`status-${i}`);
+    if (s) s.innerHTML = '<div class="spinner"></div>';
+  }
+  function addDownloadBtn(i, token, name) {
+    const row = document.getElementById(`row-${i}`);
+    if (!row) return;
+    row.querySelector('.remove-btn')?.remove();
+    const a = Object.assign(document.createElement('a'), {
+      className: 'download-btn', href: `/download?token=${token}`,
+      download: name, textContent: '⬇ Save DOCX'
+    });
+    row.appendChild(a);
+  }
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+</body>
+</html>

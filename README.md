@@ -1,101 +1,120 @@
-# docx2pdf
+# md2docx
 
-Convert Word documents to PDF locally — no cloud, no subscriptions. Formatting stays intact because it uses LibreOffice under the hood (the same engine Word uses on Linux).
+Convert Markdown files to Word documents (`.docx`) locally — no cloud, no subscriptions. Formatting, headings, bold, lists, tables, and code blocks all come through correctly.
 
-The binary handles everything: if LibreOffice isn't installed it will offer to install it for you automatically.
+Two versions: a **GUI** (browser-based, drag & drop) and a **CLI** (terminal).
 
 ---
 
-## Installation
+## GUI — easiest way to use it
 
-### Step 1 — Download the binary
+Double-click the app, your browser opens, drag your `.md` files in, click **Convert**, download the `.docx` files. Close the tab when done — the app shuts itself down automatically.
 
-Go to the [Releases](https://github.com/hritupitu/docx-pdf/releases/latest) page and download the file for your system:
+Bonus: attach a reference `.docx` to make the output use your own Word styles and fonts.
+
+### Download
+
+Go to the [Releases](https://github.com/hritupitu/docx-pdf/releases/latest) page and grab the GUI binary for your system:
 
 | System | File |
 |---|---|
-| macOS (M1/M2/M3) | `docx2pdf-macos-arm64` |
-| macOS (Intel) | `docx2pdf-macos-amd64` |
-| Linux | `docx2pdf-linux-amd64` |
-| Windows | `docx2pdf-windows-amd64.exe` |
+| macOS (M1/M2/M3) | `md2docx-gui-macos-arm64` |
+| macOS (Intel) | `md2docx-gui-macos-amd64` |
+| Linux | `md2docx-gui-linux-amd64` |
+| Windows | `md2docx-gui-windows-amd64.exe` |
 
-### Step 2 — Make it runnable (macOS / Linux only)
-
-Open Terminal, `cd` to your Downloads folder, then run:
+### Setup (macOS / Linux)
 
 ```bash
-chmod +x docx2pdf-macos-arm64        # use your filename here
-sudo mv docx2pdf-macos-arm64 /usr/local/bin/docx2pdf
+chmod +x md2docx-gui-macos-arm64     # use your filename
+sudo mv md2docx-gui-macos-arm64 /usr/local/bin/md2docx-gui
 ```
 
-On **Windows**: just move the `.exe` somewhere convenient and run it from there.
-
-### Step 3 — First run (installs LibreOffice if needed)
+Then just run:
 
 ```bash
-docx2pdf myfile.docx
+md2docx-gui
 ```
 
-If LibreOffice isn't on your machine yet, it will ask:
+Your browser opens automatically.
 
+> **macOS note:** Right-click → Open → Open anyway, or run `xattr -d com.apple.quarantine md2docx-gui-macos-arm64` before moving it.
+
+### Pandoc (required, one-time)
+
+The GUI shows a warning if Pandoc isn't installed. On macOS:
+
+```bash
+brew install pandoc
 ```
-  LibreOffice not found.
-
-  → Will run: brew install --cask libreoffice
-
-  Install LibreOffice now? [y/N]
-```
-
-Type `y` and hit Enter. It installs LibreOffice and then converts your file — all in one go. You only need to do this once.
-
-> **macOS note:** After downloading, macOS may warn that the binary is from an unidentified developer. To bypass: right-click the file → Open → Open anyway. Or run `xattr -d com.apple.quarantine docx2pdf-macos-arm64` before moving it.
 
 ---
 
-## Usage
+## CLI — for terminal users
 
 ```bash
-# Convert a single file (PDF saved next to the docx)
-docx2pdf report.docx
+# Single file (output saved next to the input)
+md2docx notes.md
 
 # Save to a specific folder
-docx2pdf -o ~/Desktop report.docx
+md2docx -o ~/Desktop notes.md
 
-# Convert multiple files at once
-docx2pdf *.docx
+# Batch convert
+md2docx *.md
 
-# Batch convert into a folder, 8 files at a time
-docx2pdf -j 8 -o ./pdfs *.docx
-
-# Quiet mode — only prints output paths (good for scripting)
-docx2pdf -q report.docx
+# Use a reference .docx for custom Word styles
+md2docx -ref my-template.docx *.md
 ```
+
+If Pandoc isn't installed, the CLI will offer to install it automatically on first run.
+
+### Download
+
+| System | File |
+|---|---|
+| macOS (M1/M2/M3) | `md2docx-macos-arm64` |
+| macOS (Intel) | `md2docx-macos-amd64` |
+| Linux | `md2docx-linux-amd64` |
+| Windows | `md2docx-windows-amd64.exe` |
 
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `-o <dir>` | same folder as input | Where to save the PDF(s) |
+| `-o <dir>` | same folder as input | Where to save the `.docx` files |
+| `-ref <file>` | none | Reference `.docx` for custom Word styles/fonts |
 | `-j <n>` | `4` | Parallel workers for batch conversion |
 | `-q` | off | Quiet mode, only print output paths |
 | `--version` | | Print version and exit |
 
 ---
 
-## Requirements
+## What gets converted
 
-- **LibreOffice** — the binary installs it for you on first run via `brew` (macOS), `apt` / `dnf` / `pacman` (Linux), or `winget` (Windows).
-- No internet connection needed after that. Conversion is fully local.
+| Markdown | Word output |
+|---|---|
+| `# Heading 1` | Heading 1 style |
+| `**bold**` | Bold |
+| `*italic*` | Italic |
+| `- list item` | Bulleted list |
+| `1. item` | Numbered list |
+| `\`code\`` | Inline code |
+| ` ``` ` code block | Code block |
+| `\| table \|` | Word table |
+| `[link](url)` | Hyperlink |
 
 ---
 
 ## Build from source
 
-Requires [Go 1.21+](https://go.dev/dl/).
+Requires [Go 1.21+](https://go.dev/dl/) and [Pandoc](https://pandoc.org/installing.html).
 
 ```bash
 git clone https://github.com/hritupitu/docx-pdf.git
-cd docx-pdf/docx2pdf
-go build -o docx2pdf .
-sudo mv docx2pdf /usr/local/bin/docx2pdf
+
+# GUI
+cd docx-pdf/md2docx-gui && go build -o md2docx-gui .
+
+# CLI
+cd docx-pdf/md2docx && go build -o md2docx .
 ```

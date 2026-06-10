@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -38,31 +37,24 @@ func info(s string) string     { return color(cyan, "→ ") + s }
 func banner() {
 	fmt.Println()
 	fmt.Println(color(bold+cyan, "  ┌─────────────────────────────────┐"))
-	fmt.Println(color(bold+cyan, "  │") + color(bold+white, "   docx2pdf  •  v1.0.0           ") + color(bold+cyan, "│"))
-	fmt.Println(color(bold+cyan, "  │") + color(dim, "   DOCX → PDF, formatting intact ") + color(bold+cyan, "│"))
+	fmt.Println(color(bold+cyan, "  │") + color(bold+white, "   md2docx  •  v1.0.0            ") + color(bold+cyan, "│"))
+	fmt.Println(color(bold+cyan, "  │") + color(dim, "   Markdown → DOCX, clean output ") + color(bold+cyan, "│"))
 	fmt.Println(color(bold+cyan, "  └─────────────────────────────────┘"))
 	fmt.Println()
 }
 
-// ── Backend detection ─────────────────────────────────────────────────────────
+// ── Pandoc detection & install ────────────────────────────────────────────────
 
-type backend struct {
-	name    string
-	convert func(src, outDir string) error
-}
-
-func findSoffice() string {
-	candidates := []string{
-		"soffice",
-		"libreoffice",
-		"/Applications/LibreOffice.app/Contents/MacOS/soffice",
-		"/usr/lib/libreoffice/program/soffice",
-		`C:\Program Files\LibreOffice\program\soffice.exe`,
+func findPandoc() string {
+	if p, err := exec.LookPath("pandoc"); err == nil {
+		return p
 	}
-	for _, c := range candidates {
-		if p, err := exec.LookPath(c); err == nil {
-			return p
-		}
+	// common non-PATH locations
+	for _, c := range []string{
+		"/usr/local/bin/pandoc",
+		"/opt/homebrew/bin/pandoc",
+		`C:\Program Files\Pandoc\pandoc.exe`,
+	} {
 		if _, err := os.Stat(c); err == nil {
 			return c
 		}
@@ -70,134 +62,70 @@ func findSoffice() string {
 	return ""
 }
 
-func libreofficeBackend(bin string) backend {
-	return backend{
-		name: "LibreOffice",
-		convert: func(src, outDir string) error {
-			cmd := exec.Command(bin,
-				"--headless",
-				"--norestore",
-				"--nofirststartwizard",
-				"--convert-to", "pdf:writer_pdf_Export",
-				"--outdir", outDir,
-				src,
-			)
-			cmd.Stdout = os.Stderr
-			cmd.Stderr = os.Stderr
-			return cmd.Run()
-		},
-	}
-}
-
-func unoconvBackend() (backend, bool) {
-	p, err := exec.LookPath("unoconv")
-	if err != nil {
-		return backend{}, false
-	}
-	return backend{
-		name: "unoconv",
-		convert: func(src, outDir string) error {
-			base := strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))
-			out := filepath.Join(outDir, base+".pdf")
-			return exec.Command(p, "-f", "pdf", "-o", out, src).Run()
-		},
-	}, true
-}
-
-func detectBackend() (backend, error) {
-	if bin := findSoffice(); bin != "" {
-		return libreofficeBackend(bin), nil
-	}
-	if b, ok := unoconvBackend(); ok {
-		return b, nil
-	}
-	return backend{}, errors.New("no converter found")
-}
-
-// ── Auto-install ──────────────────────────────────────────────────────────────
-
 type installPlan struct {
 	tool string
 	args []string
-	hint string // shown if the tool itself isn't available
+	hint string
 }
 
 func platformInstallPlan() (installPlan, bool) {
 	switch runtime.GOOS {
 	case "darwin":
 		if _, err := exec.LookPath("brew"); err == nil {
-			return installPlan{
-				tool: "brew",
-				args: []string{"install", "--cask", "libreoffice"},
-			}, true
+			return installPlan{tool: "brew", args: []string{"install", "pandoc"}}, true
 		}
-		return installPlan{hint: "Install Homebrew first: https://brew.sh"}, false
-
+		return installPlan{hint: "Install Homebrew first (https://brew.sh), then: brew install pandoc"}, false
 	case "linux":
-		if _, err := exec.LookPath("apt-get"); err == nil {
-			return installPlan{
-				tool: "sudo",
-				args: []string{"apt-get", "install", "-y", "libreoffice"},
-			}, true
+		for _, pm := range [][]string{
+			{"apt-get", "sudo", "apt-get", "install", "-y", "pandoc"},
+			{"dnf", "sudo", "dnf", "install", "-y", "pandoc"},
+			{"pacman", "sudo", "pacman", "-S", "--noconfirm", "pandoc"},
+		} {
+			if _, err := exec.LookPath(pm[0]); err == nil {
+				return installPlan{tool: pm[1], args: pm[2:]}, true
+			}
 		}
-		if _, err := exec.LookPath("dnf"); err == nil {
-			return installPlan{
-				tool: "sudo",
-				args: []string{"dnf", "install", "-y", "libreoffice"},
-			}, true
-		}
-		if _, err := exec.LookPath("pacman"); err == nil {
-			return installPlan{
-				tool: "sudo",
-				args: []string{"pacman", "-S", "--noconfirm", "libreoffice-still"},
-			}, true
-		}
-		return installPlan{hint: "Install via your package manager: libreoffice"}, false
-
+		return installPlan{hint: "Install via your package manager: pandoc"}, false
 	case "windows":
 		if _, err := exec.LookPath("winget"); err == nil {
-			return installPlan{
-				tool: "winget",
-				args: []string{"install", "-e", "--id", "TheDocumentFoundation.LibreOffice"},
-			}, true
+			return installPlan{tool: "winget", args: []string{"install", "-e", "--id", "JohnMacFarlane.Pandoc"}}, true
 		}
-		return installPlan{hint: "Download from https://www.libreoffice.org/download"}, false
+		return installPlan{hint: "Download from https://pandoc.org/installing.html"}, false
 	}
-	return installPlan{hint: "Download from https://www.libreoffice.org/download"}, false
+	return installPlan{hint: "Download from https://pandoc.org/installing.html"}, false
 }
 
-func promptYN(question string) bool {
-	fmt.Printf("  %s [y/N] ", question)
+func promptYN(q string) bool {
+	fmt.Printf("  %s [y/N] ", q)
 	s := bufio.NewScanner(os.Stdin)
 	s.Scan()
 	ans := strings.TrimSpace(strings.ToLower(s.Text()))
 	return ans == "y" || ans == "yes"
 }
 
-// autoInstall tries to install LibreOffice and returns the detected backend.
-func autoInstall() (backend, error) {
+func autoInstall() (string, error) {
 	plan, canAuto := platformInstallPlan()
 
+	fmt.Println(color(bold+yellow, "\n  Pandoc not found.\n"))
+
 	if !canAuto {
-		fmt.Println(color(bold+red, "\n  LibreOffice not found.\n"))
 		if plan.hint != "" {
 			fmt.Println(color(yellow, "  "+plan.hint))
 		}
 		fmt.Println()
-		return backend{}, errors.New("cannot auto-install")
+		return "", fmt.Errorf("cannot auto-install")
 	}
 
 	cmdStr := plan.tool + " " + strings.Join(plan.args, " ")
-	fmt.Println(color(bold+yellow, "\n  LibreOffice not found.\n"))
 	fmt.Printf("  %s\n\n", info("Will run: "+color(bold, cmdStr)))
 
-	if !promptYN("Install LibreOffice now?") {
+	if !promptYN("Install Pandoc now?") {
 		fmt.Println()
-		return backend{}, errors.New("installation declined")
+		return "", fmt.Errorf("installation declined")
 	}
 
 	fmt.Println()
-	sp := newSpinner("Installing LibreOffice (this may take a few minutes) …")
+	sp := newSpinner("Installing Pandoc …")
 	cmd := exec.Command(plan.tool, plan.args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -206,16 +134,16 @@ func autoInstall() (backend, error) {
 
 	if err != nil {
 		fmt.Println(fail("Installation failed: " + err.Error()))
-		return backend{}, err
+		return "", err
 	}
-	fmt.Println(ok(color(bold, "LibreOffice installed.")))
+	fmt.Println(ok(color(bold, "Pandoc installed.")))
 	fmt.Println()
 
-	b, err := detectBackend()
-	if err != nil {
-		return backend{}, errors.New("LibreOffice installed but still not found in PATH — restart your shell and try again")
+	bin := findPandoc()
+	if bin == "" {
+		return "", fmt.Errorf("pandoc installed but not found in PATH — restart your shell and try again")
 	}
-	return b, nil
+	return bin, nil
 }
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
@@ -248,7 +176,7 @@ func newSpinner(msg string) *spinner {
 
 func (s *spinner) Stop() { close(s.stop); <-s.done }
 
-// ── Progress bar (batch) ──────────────────────────────────────────────────────
+// ── Progress (batch) ──────────────────────────────────────────────────────────
 
 type progress struct {
 	total  int32
@@ -274,7 +202,7 @@ func (p *progress) tick(file string, err error) {
 
 // ── Conversion ────────────────────────────────────────────────────────────────
 
-func convertFile(b backend, src, outDir string) (string, error) {
+func convertFile(bin, src, outDir, refDoc string) (string, error) {
 	abs, err := filepath.Abs(src)
 	if err != nil {
 		return "", err
@@ -282,20 +210,30 @@ func convertFile(b backend, src, outDir string) (string, error) {
 	if _, err := os.Stat(abs); err != nil {
 		return "", fmt.Errorf("file not found: %s", src)
 	}
-	if ext := strings.ToLower(filepath.Ext(abs)); ext != ".docx" && ext != ".doc" {
-		return "", fmt.Errorf("not a .docx / .doc file")
+	if ext := strings.ToLower(filepath.Ext(abs)); ext != ".md" && ext != ".markdown" {
+		return "", fmt.Errorf("not a .md / .markdown file")
 	}
+
 	if outDir == "" {
 		outDir = filepath.Dir(abs)
 	}
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return "", err
 	}
-	if err := b.convert(abs, outDir); err != nil {
+
+	base := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
+	out := filepath.Join(outDir, base+".docx")
+
+	args := []string{abs, "-o", out, "--from=markdown", "--to=docx"}
+	if refDoc != "" {
+		args = append(args, "--reference-doc="+refDoc)
+	}
+
+	cmd := exec.Command(bin, args...)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
 		return "", err
 	}
-	base := strings.TrimSuffix(filepath.Base(abs), filepath.Ext(abs))
-	out := filepath.Join(outDir, base+".pdf")
 	if _, err := os.Stat(out); err != nil {
 		return "", fmt.Errorf("conversion produced no output")
 	}
@@ -306,15 +244,16 @@ func convertFile(b backend, src, outDir string) (string, error) {
 
 func main() {
 	var (
-		outDir  = flag.String("o", "", "output directory (default: same as input file)")
+		outDir  = flag.String("o", "", "output directory (default: same as input)")
+		refDoc  = flag.String("ref", "", "reference .docx for custom Word styles/fonts")
 		jobs    = flag.Int("j", 4, "parallel workers for batch conversion")
-		quiet   = flag.Bool("q", false, "quiet mode: only print output paths, no prompts")
+		quiet   = flag.Bool("q", false, "quiet mode: only print output paths")
 		version = flag.Bool("version", false, "print version and exit")
 	)
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, color(bold, "\nUsage:\n"))
-		fmt.Fprintf(os.Stderr, "  docx2pdf [flags] file.docx [file2.docx ...]\n")
-		fmt.Fprintf(os.Stderr, "  docx2pdf [flags] *.docx\n\n")
+		fmt.Fprintf(os.Stderr, "  md2docx [flags] file.md [file2.md ...]\n")
+		fmt.Fprintf(os.Stderr, "  md2docx [flags] *.md\n\n")
 		fmt.Fprintf(os.Stderr, color(bold, "Flags:\n"))
 		flag.PrintDefaults()
 		fmt.Fprintln(os.Stderr)
@@ -322,7 +261,7 @@ func main() {
 	flag.Parse()
 
 	if *version {
-		fmt.Println("docx2pdf v1.0.0")
+		fmt.Println("md2docx v1.0.0")
 		return
 	}
 
@@ -330,21 +269,21 @@ func main() {
 		banner()
 	}
 
-	// ── detect or auto-install backend ──
-	b, err := detectBackend()
-	if err != nil {
+	bin := findPandoc()
+	if bin == "" {
 		if *quiet {
-			fmt.Fprintln(os.Stderr, "error: LibreOffice not found. Run without -q to auto-install.")
+			fmt.Fprintln(os.Stderr, "error: pandoc not found. Run without -q to auto-install.")
 			os.Exit(1)
 		}
-		b, err = autoInstall()
+		var err error
+		bin, err = autoInstall()
 		if err != nil {
 			os.Exit(1)
 		}
 	}
 
 	if !*quiet {
-		fmt.Println(info("Backend: " + color(bold, b.name)))
+		fmt.Println(info("Backend: " + color(bold, "Pandoc")))
 		fmt.Println()
 	}
 
@@ -354,13 +293,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	// ── single file ──
+	// single file
 	if len(files) == 1 {
 		var sp *spinner
 		if !*quiet {
 			sp = newSpinner("Converting " + color(bold, files[0]) + " …")
 		}
-		out, err := convertFile(b, files[0], *outDir)
+		out, err := convertFile(bin, files[0], *outDir, *refDoc)
 		if sp != nil {
 			sp.Stop()
 		}
@@ -377,7 +316,7 @@ func main() {
 		return
 	}
 
-	// ── batch ──
+	// batch
 	if !*quiet {
 		fmt.Printf("  %s Converting %s%d files%s …\n\n",
 			color(cyan, "⚡"), bold, len(files), reset)
@@ -394,7 +333,7 @@ func main() {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			out, err := convertFile(b, f, *outDir)
+			out, err := convertFile(bin, f, *outDir, *refDoc)
 			if *quiet {
 				if err == nil {
 					fmt.Println(out)
