@@ -8,19 +8,13 @@ Three ways to use it: a **native macOS app** (DMG), a **web GUI** (browser-based
 
 ## macOS App — easiest way (DMG)
 
-Download, drag to Applications, done. No Pandoc install required — it's bundled inside.
+No Pandoc install required — it's bundled inside the app.
 
-### Download
-
-Go to the [Releases](https://github.com/hritupitu/docx-pdf/releases/latest) page and grab:
-
-| File | Notes |
-|---|---|
-| `md2docx-2.0.0.dmg` | macOS universal (M1/M2/M3 + Intel), macOS 13+ |
+**[⬇ Download the latest DMG](https://github.com/hritupitu/md-docx/releases/latest)**
 
 Open the DMG, drag **md2docx** to your Applications folder, and launch it.
 
-> **First launch:** macOS may say the app is from an unidentified developer. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
+> **First launch:** macOS may block the app since it's not notarized. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
 
 ### How to use
 
@@ -35,62 +29,79 @@ Open the DMG, drag **md2docx** to your Applications folder, and launch it.
 
 Runs a local server and opens your browser. Drag & drop files, convert, download. Shuts itself down automatically when you close the browser tab.
 
-### Download
+Requires Pandoc installed: `brew install pandoc` / `sudo apt install pandoc`
 
-| System | File |
-|---|---|
-| macOS (M1/M2/M3) | `md2docx-gui-macos-arm64` |
-| macOS (Intel) | `md2docx-gui-macos-amd64` |
-| Linux | `md2docx-gui-linux-amd64` |
-| Windows | `md2docx-gui-windows-amd64.exe` |
+### Install
 
-### Setup (macOS / Linux)
-
+**macOS (M1/M2/M3)**
 ```bash
-chmod +x md2docx-gui-macos-arm64
-sudo mv md2docx-gui-macos-arm64 /usr/local/bin/md2docx-gui
+curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-macos-arm64 -o md2docx-gui
+chmod +x md2docx-gui && xattr -d com.apple.quarantine md2docx-gui
+sudo mv md2docx-gui /usr/local/bin/md2docx-gui
+```
+
+**macOS (Intel)**
+```bash
+curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-macos-amd64 -o md2docx-gui
+chmod +x md2docx-gui && xattr -d com.apple.quarantine md2docx-gui
+sudo mv md2docx-gui /usr/local/bin/md2docx-gui
+```
+
+**Linux**
+```bash
+curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-linux-amd64 -o md2docx-gui
+chmod +x md2docx-gui
+sudo mv md2docx-gui /usr/local/bin/md2docx-gui
+```
+
+**Windows** — download [`md2docx-gui-windows-amd64.exe`](https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-windows-amd64.exe) and run it directly.
+
+Then just run:
+```bash
 md2docx-gui
 ```
 
-Your browser opens automatically at a local address.
-
-> **macOS note:** Run `xattr -d com.apple.quarantine md2docx-gui-macos-arm64` before moving it, or right-click → Open → Open Anyway.
-
-Pandoc must be installed separately for the web GUI:
-
-```bash
-brew install pandoc      # macOS
-sudo apt install pandoc  # Linux
-```
+Your browser opens automatically.
 
 ---
 
 ## CLI — for terminal users
 
-```bash
-# Single file
-md2docx notes.md
-
-# Save to a specific folder
-md2docx -o ~/Desktop notes.md
-
-# Batch convert
-md2docx *.md
-
-# Use a reference .docx for custom Word styles
-md2docx -ref my-template.docx *.md
-```
-
 If Pandoc isn't installed, the CLI will offer to install it automatically on first run.
 
-### Download
+### Install
 
-| System | File |
-|---|---|
-| macOS (M1/M2/M3) | `md2docx-macos-arm64` |
-| macOS (Intel) | `md2docx-macos-amd64` |
-| Linux | `md2docx-linux-amd64` |
-| Windows | `md2docx-windows-amd64.exe` |
+**macOS (M1/M2/M3)**
+```bash
+curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-macos-arm64 -o md2docx
+chmod +x md2docx && xattr -d com.apple.quarantine md2docx
+sudo mv md2docx /usr/local/bin/md2docx
+```
+
+**macOS (Intel)**
+```bash
+curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-macos-amd64 -o md2docx
+chmod +x md2docx && xattr -d com.apple.quarantine md2docx
+sudo mv md2docx /usr/local/bin/md2docx
+```
+
+**Linux**
+```bash
+curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-linux-amd64 -o md2docx
+chmod +x md2docx
+sudo mv md2docx /usr/local/bin/md2docx
+```
+
+**Windows** — download [`md2docx-windows-amd64.exe`](https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-windows-amd64.exe), rename to `md2docx.exe`, and add to your PATH.
+
+### Usage
+
+```bash
+md2docx notes.md                          # single file, saved next to input
+md2docx -o ~/Desktop notes.md             # save to a specific folder
+md2docx *.md                              # batch convert
+md2docx -ref my-template.docx *.md       # use a reference .docx for Word styles
+```
 
 ### Flags
 
@@ -122,24 +133,23 @@ If Pandoc isn't installed, the CLI will offer to install it automatically on fir
 
 ## Build from source
 
-### macOS App (requires Xcode 15+ and pandoc cached from prior build)
-
 ```bash
-git clone https://github.com/hritupitu/docx-pdf.git
-cd docx-pdf
+git clone https://github.com/hritupitu/md-docx.git
+cd md-docx
+```
+
+**macOS App** (requires Xcode 15+)
+```bash
 bash scripts/build-dmg.sh
-# output: dist/md2docx-2.0.0.dmg
+# output: dist/md2docx-<version>.dmg
 ```
 
-### Web GUI (requires Go 1.21+)
-
+**Web GUI** (requires Go 1.21+)
 ```bash
-cd docx-pdf/md2docx-gui && go build -o md2docx-gui .
-./md2docx-gui
+cd md2docx-gui && go build -o md2docx-gui .
 ```
 
-### CLI (requires Go 1.21+)
-
+**CLI** (requires Go 1.21+)
 ```bash
-cd docx-pdf/md2docx && go build -o md2docx .
+cd md2docx && go build -o md2docx .
 ```
