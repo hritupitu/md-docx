@@ -267,12 +267,19 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func findPandoc() string {
+	// Check alongside this binary first — works when bundled in a .app
+	if exe, err := os.Executable(); err == nil {
+		bundled := filepath.Join(filepath.Dir(exe), "pandoc")
+		if _, err := os.Stat(bundled); err == nil {
+			return bundled
+		}
+	}
 	if p, err := exec.LookPath("pandoc"); err == nil {
 		return p
 	}
 	for _, c := range []string{
-		"/usr/local/bin/pandoc",
 		"/opt/homebrew/bin/pandoc",
+		"/usr/local/bin/pandoc",
 		`C:\Program Files\Pandoc\pandoc.exe`,
 	} {
 		if _, err := os.Stat(c); err == nil {
