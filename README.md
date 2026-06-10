@@ -2,19 +2,40 @@
 
 Convert Markdown files to Word documents (`.docx`) locally — no cloud, no subscriptions. Formatting, headings, bold, lists, tables, and code blocks all come through correctly.
 
-Two versions: a **GUI** (browser-based, drag & drop) and a **CLI** (terminal).
+Three ways to use it: a **native macOS app** (DMG), a **web GUI** (browser-based), and a **CLI** (terminal).
 
 ---
 
-## GUI — easiest way to use it
+## macOS App — easiest way (DMG)
 
-Double-click the app, your browser opens, drag your `.md` files in, click **Convert**, download the `.docx` files. Close the tab when done — the app shuts itself down automatically.
-
-Bonus: attach a reference `.docx` to make the output use your own Word styles and fonts.
+Download, drag to Applications, done. No Pandoc install required — it's bundled inside.
 
 ### Download
 
-Go to the [Releases](https://github.com/hritupitu/docx-pdf/releases/latest) page and grab the GUI binary for your system:
+Go to the [Releases](https://github.com/hritupitu/docx-pdf/releases/latest) page and grab:
+
+| File | Notes |
+|---|---|
+| `md2docx-2.0.0.dmg` | macOS universal (M1/M2/M3 + Intel), macOS 13+ |
+
+Open the DMG, drag **md2docx** to your Applications folder, and launch it.
+
+> **First launch:** macOS may say the app is from an unidentified developer. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+### How to use
+
+1. Click the drop zone to pick one or more `.md` files
+2. Optionally attach a reference `.docx` to use its Word styles and fonts
+3. Click **Convert to DOCX**
+4. A Save dialog appears for each file — choose where to save it
+
+---
+
+## Web GUI — browser-based
+
+Runs a local server and opens your browser. Drag & drop files, convert, download. Shuts itself down automatically when you close the browser tab.
+
+### Download
 
 | System | File |
 |---|---|
@@ -26,26 +47,20 @@ Go to the [Releases](https://github.com/hritupitu/docx-pdf/releases/latest) page
 ### Setup (macOS / Linux)
 
 ```bash
-chmod +x md2docx-gui-macos-arm64     # use your filename
+chmod +x md2docx-gui-macos-arm64
 sudo mv md2docx-gui-macos-arm64 /usr/local/bin/md2docx-gui
-```
-
-Then just run:
-
-```bash
 md2docx-gui
 ```
 
-Your browser opens automatically.
+Your browser opens automatically at a local address.
 
-> **macOS note:** Right-click → Open → Open anyway, or run `xattr -d com.apple.quarantine md2docx-gui-macos-arm64` before moving it.
+> **macOS note:** Run `xattr -d com.apple.quarantine md2docx-gui-macos-arm64` before moving it, or right-click → Open → Open Anyway.
 
-### Pandoc (required, one-time)
-
-The GUI shows a warning if Pandoc isn't installed. On macOS:
+Pandoc must be installed separately for the web GUI:
 
 ```bash
-brew install pandoc
+brew install pandoc      # macOS
+sudo apt install pandoc  # Linux
 ```
 
 ---
@@ -53,7 +68,7 @@ brew install pandoc
 ## CLI — for terminal users
 
 ```bash
-# Single file (output saved next to the input)
+# Single file
 md2docx notes.md
 
 # Save to a specific folder
@@ -98,8 +113,8 @@ If Pandoc isn't installed, the CLI will offer to install it automatically on fir
 | `*italic*` | Italic |
 | `- list item` | Bulleted list |
 | `1. item` | Numbered list |
-| `\`code\`` | Inline code |
-| ` ``` ` code block | Code block |
+| `` `code` `` | Inline code |
+| ```` ``` ```` code block | Code block |
 | `\| table \|` | Word table |
 | `[link](url)` | Hyperlink |
 
@@ -107,14 +122,24 @@ If Pandoc isn't installed, the CLI will offer to install it automatically on fir
 
 ## Build from source
 
-Requires [Go 1.21+](https://go.dev/dl/) and [Pandoc](https://pandoc.org/installing.html).
+### macOS App (requires Xcode 15+ and pandoc cached from prior build)
 
 ```bash
 git clone https://github.com/hritupitu/docx-pdf.git
+cd docx-pdf
+bash scripts/build-dmg.sh
+# output: dist/md2docx-2.0.0.dmg
+```
 
-# GUI
+### Web GUI (requires Go 1.21+)
+
+```bash
 cd docx-pdf/md2docx-gui && go build -o md2docx-gui .
+./md2docx-gui
+```
 
-# CLI
+### CLI (requires Go 1.21+)
+
+```bash
 cd docx-pdf/md2docx && go build -o md2docx .
 ```

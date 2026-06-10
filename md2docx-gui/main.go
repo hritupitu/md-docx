@@ -18,8 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	webview "github.com/webview/webview_go"
 )
 
 //go:embed web
@@ -38,8 +36,13 @@ type job struct {
 var (
 	jobs      sync.Map
 	downloads sync.Map
-	server    *http.Server
+
+	shutdownMu    sync.Mutex
+	shutdownTimer *time.Timer
+	server        *http.Server
 )
+
+const heartbeatTimeout = 12 * time.Second
 
 func main() {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -53,109 +56,46 @@ func main() {
 	mux := http.NewServeMux()
 	webFS, _ := fs.Sub(webFiles, "web")
 	mux.Handle("/", http.FileServer(http.FS(webFS)))
-	mux.HandleFunc("/upload-by-path", handleUploadByPath)
+	mux.HandleFunc("/upload", handleUpload)
 	mux.HandleFunc("/events", handleEvents)
+	mux.HandleFunc("/download", handleDownload)
+	mux.HandleFunc("/heartbeat", handleHeartbeat)
 	mux.HandleFunc("/check", handleCheck)
 
 	server = &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", port), Handler: mux}
-	go server.ListenAndServe()
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
-	w := webview.New(false)
-	defer w.Destroy()
-	w.SetTitle("md2docx")
-	w.SetSize(660, 780, webview.HintNone)
+	fmt.Println("md2docx →", url)
+	fmt.Println("Close the browser tab to quit.")
 
-	// Native file picker — WKWebView blocks hidden <input type="file"> clicks
-	w.Bind("pickFiles", func() []string {
-		out, err := exec.Command("osascript",
-			"-e", `set theFiles to choose file of type {"public.data"} with multiple selections allowed with prompt "Select Markdown files to convert"`,
-			"-e", `set output to ""`,
-			"-e", `repeat with f in theFiles`,
-			"-e", `set output to output & POSIX path of f & linefeed`,
-			"-e", `end repeat`,
-			"-e", `return output`,
-		).Output()
-		if err != nil {
-			return nil // user cancelled
-		}
-		var paths []string
-		for _, p := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			ext := strings.ToLower(filepath.Ext(p))
-			if ext == ".md" || ext == ".markdown" {
-				paths = append(paths, p)
-			}
-		}
-		return paths
-	})
+	resetShutdownTimer()
+	go openBrowser(url)
 
-	// Native reference .docx picker
-	w.Bind("pickRefDoc", func() string {
-		out, err := exec.Command("osascript",
-			"-e", `set theFile to choose file of type {"public.data"} with prompt "Select a reference .docx to apply its styles"`,
-			"-e", `return POSIX path of theFile`,
-		).Output()
-		if err != nil {
-			return ""
-		}
-		return strings.TrimSpace(string(out))
-	})
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
 
-	// Native Save As dialog — WKWebView ignores <a download> links
-	w.Bind("saveFile", func(token string, suggestedName string) bool {
-		val, ok := downloads.Load(token)
-		if !ok {
-			return false
-		}
-		srcPath := val.(string)
-
-		out, err := exec.Command("osascript",
-			"-e", fmt.Sprintf(`set savePath to choose file name default name "%s" with prompt "Save converted file:"`, suggestedName),
-			"-e", `return POSIX path of savePath`,
-		).Output()
-		if err != nil {
-			return false // user cancelled
-		}
-		dstPath := strings.TrimSpace(string(out))
-		if !strings.HasSuffix(strings.ToLower(dstPath), ".docx") {
-			dstPath += ".docx"
-		}
-
-		src, err := os.Open(srcPath)
-		if err != nil {
-			return false
-		}
-		defer src.Close()
-		dst, err := os.Create(dstPath)
-		if err != nil {
-			return false
-		}
-		defer dst.Close()
-		_, err = io.Copy(dst, src)
-		return err == nil
-	})
-
-	w.Navigate(url)
-	w.Run() // blocks until window closed
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	server.Shutdown(ctx)
-
-	jobs.Range(func(_, v any) bool {
-		j := v.(*job)
-		if len(j.files) > 0 {
-			os.RemoveAll(filepath.Dir(j.files[0].tmpPath))
-		}
-		return true
+func resetShutdownTimer() {
+	shutdownMu.Lock()
+	defer shutdownMu.Unlock()
+	if shutdownTimer != nil {
+		shutdownTimer.Reset(heartbeatTimeout)
+		return
+	}
+	shutdownTimer = time.AfterFunc(heartbeatTimeout, func() {
+		fmt.Println("Browser tab closed. Shutting down.")
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
 	})
 }
 
-// ── dependency check ──────────────────────────────────────────────────────────
+func handleHeartbeat(w http.ResponseWriter, r *http.Request) {
+	resetShutdownTimer()
+	w.WriteHeader(http.StatusOK)
+}
 
 func handleCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -183,38 +123,54 @@ func installHint() string {
 	return "https://pandoc.org/installing.html"
 }
 
-// ── upload by filesystem path (used by native file picker) ───────────────────
-
-func handleUploadByPath(w http.ResponseWriter, r *http.Request) {
+func handleUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct {
-		Paths  []string `json:"paths"`
-		RefDoc string   `json:"refDoc"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	j := &job{refDoc: req.RefDoc}
-	for _, path := range req.Paths {
-		ext := strings.ToLower(filepath.Ext(path))
-		if ext != ".md" && ext != ".markdown" {
+	tmpDir, err := os.MkdirTemp("", "md2docx-*")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	j := &job{}
+
+	if refFiles := r.MultipartForm.File["ref"]; len(refFiles) > 0 {
+		fh := refFiles[0]
+		f, _ := fh.Open()
+		dst := filepath.Join(tmpDir, "reference.docx")
+		out, _ := os.Create(dst)
+		io.Copy(out, f)
+		out.Close()
+		f.Close()
+		j.refDoc = dst
+	}
+
+	for _, fh := range r.MultipartForm.File["files"] {
+		f, err := fh.Open()
+		if err != nil {
 			continue
 		}
-		if _, err := os.Stat(path); err != nil {
+		dst := filepath.Join(tmpDir, fh.Filename)
+		out, err := os.Create(dst)
+		if err != nil {
+			f.Close()
 			continue
 		}
-		j.files = append(j.files, uploadedFile{
-			name:    filepath.Base(path),
-			tmpPath: path,
-		})
+		io.Copy(out, f)
+		out.Close()
+		f.Close()
+		j.files = append(j.files, uploadedFile{name: fh.Filename, tmpPath: dst})
 	}
 
 	if len(j.files) == 0 {
+		os.RemoveAll(tmpDir)
 		http.Error(w, "no valid files", http.StatusBadRequest)
 		return
 	}
@@ -224,8 +180,6 @@ func handleUploadByPath(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"jobId": id})
 }
-
-// ── SSE conversion stream ─────────────────────────────────────────────────────
 
 func handleEvents(w http.ResponseWriter, r *http.Request) {
 	val, ok := jobs.Load(r.URL.Query().Get("job"))
@@ -253,21 +207,13 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 
 	bin := findPandoc()
 	if bin == "" {
-		send(map[string]any{"type": "fatal", "message": "Pandoc not found. Run: " + installHint()})
+		send(map[string]any{"type": "fatal", "message": "Pandoc not found. " + installHint()})
 		return
 	}
 
 	for _, uf := range j.files {
 		base := strings.TrimSuffix(uf.name, filepath.Ext(uf.name))
-
-		// Always write output to a temp file so we control the path
-		tmpOut, err := os.CreateTemp("", base+"-*.docx")
-		if err != nil {
-			send(map[string]any{"type": "error", "file": uf.name, "error": "could not create temp file"})
-			continue
-		}
-		outPath := tmpOut.Name()
-		tmpOut.Close()
+		outPath := filepath.Join(filepath.Dir(uf.tmpPath), base+".docx")
 
 		args := []string{uf.tmpPath, "-o", outPath, "--from=markdown", "--to=docx"}
 		if j.refDoc != "" {
@@ -276,12 +222,12 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 
 		cmd := exec.Command(bin, args...)
 		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			os.Remove(outPath)
+		err := cmd.Run()
+
+		if err != nil {
 			send(map[string]any{"type": "error", "file": uf.name, "error": err.Error()})
 			continue
 		}
-
 		if _, statErr := os.Stat(outPath); statErr != nil {
 			send(map[string]any{"type": "error", "file": uf.name, "error": "no output produced"})
 			continue
@@ -289,18 +235,23 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 
 		token := newID()
 		downloads.Store(token, outPath)
-		send(map[string]any{
-			"type":  "converted",
-			"file":  uf.name,
-			"docx":  base + ".docx",
-			"token": token,
-		})
+		send(map[string]any{"type": "converted", "file": uf.name, "docx": base + ".docx", "token": token})
 	}
 
 	send(map[string]any{"type": "complete"})
 }
 
-// ── pandoc ────────────────────────────────────────────────────────────────────
+func handleDownload(w http.ResponseWriter, r *http.Request) {
+	val, ok := downloads.Load(r.URL.Query().Get("token"))
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	path := val.(string)
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filepath.Base(path)+`"`)
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+	http.ServeFile(w, r, path)
+}
 
 func findPandoc() string {
 	if exe, err := os.Executable(); err == nil {
@@ -312,15 +263,28 @@ func findPandoc() string {
 	if p, err := exec.LookPath("pandoc"); err == nil {
 		return p
 	}
-	for _, c := range []string{
-		"/opt/homebrew/bin/pandoc",
-		"/usr/local/bin/pandoc",
-	} {
+	for _, c := range []string{"/opt/homebrew/bin/pandoc", "/usr/local/bin/pandoc"} {
 		if _, err := os.Stat(c); err == nil {
 			return c
 		}
 	}
 	return ""
+}
+
+func openBrowser(url string) {
+	time.Sleep(350 * time.Millisecond)
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	}
+	if cmd != nil {
+		cmd.Run()
+	}
 }
 
 func newID() string {

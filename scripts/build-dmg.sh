@@ -8,7 +8,7 @@ VERSION="2.0.0"
 BUNDLE_ID="io.github.hritupitu.md2docx"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-GUI_DIR="$REPO_ROOT/md2docx-gui"
+SWIFT_DIR="$REPO_ROOT/md2docx-swift"
 BUILD_DIR="$REPO_ROOT/build"
 DIST_DIR="$REPO_ROOT/dist"
 
@@ -19,26 +19,24 @@ ok()   { echo -e "${GREEN}✔${NC}  $1"; }
 warn() { echo -e "${YELLOW}⚠${NC}  $1"; }
 step() { echo -e "\n${BOLD}$1${NC}"; }
 
-step "── 1 / 5  Build Go binary ───────────────────────────────────────────"
+step "── 1 / 5  Build Swift binary ────────────────────────────────────────"
 mkdir -p "$BUILD_DIR" "$DIST_DIR"
-TMPDIR_GO=/tmp/gobuild; mkdir -p $TMPDIR_GO
 
-NATIVE_ARCH=$(uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/')
-log "Compiling for ${NATIVE_ARCH} (native)…"
-# CGO is required by webview — cross-compilation needs a full cross toolchain.
-# Build for the current machine's architecture only.
-TMPDIR=$TMPDIR_GO CGO_ENABLED=1 GOOS=darwin GOARCH="${NATIVE_ARCH}" \
-  go build -C "$GUI_DIR" -ldflags="-s -w" -o "$BUILD_DIR/${APP_NAME}-universal" .
-ok "Go binary ready (darwin/${NATIVE_ARCH})"
+log "Compiling SwiftUI app (release)…"
+cd "$SWIFT_DIR"
+swift build -c release 2>&1
+SWIFT_BIN="$SWIFT_DIR/.build/release/${APP_NAME}"
+cp "$SWIFT_BIN" "$BUILD_DIR/${APP_NAME}-binary"
+ok "Swift binary ready"
+cd "$REPO_ROOT"
 
 step "── 2 / 5  Download & bundle Pandoc ${PANDOC_VERSION} ─────────────────────"
 
 download_pandoc() {
-  local arch="$1"   # arm64 or x86_64
+  local arch="$1"
   local outbin="$2"
-  local pkg_arch="${arch}"    # same in URL
 
-  local url="https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-${pkg_arch}-macOS.pkg"
+  local url="https://github.com/jgm/pandoc/releases/download/${PANDOC_VERSION}/pandoc-${PANDOC_VERSION}-${arch}-macOS.pkg"
   local pkg="/tmp/pandoc-${arch}.pkg"
   local expanded="/tmp/pandoc-${arch}-expanded"
   local extracted="/tmp/pandoc-${arch}-extracted"
@@ -55,7 +53,6 @@ download_pandoc() {
   rm -rf "$expanded" "$extracted"
   pkgutil --expand "$pkg" "$expanded"
 
-  # Find the Payload (location varies between pandoc versions)
   local payload
   payload=$(find "$expanded" -name "Payload" | head -1)
   if [ -z "$payload" ]; then
@@ -64,7 +61,6 @@ download_pandoc() {
 
   mkdir -p "$extracted"
   cd "$extracted"
-  # Try gunzip+cpio first, fall back to tar
   if gunzip -c "$payload" | cpio -id --quiet 2>/dev/null; then
     :
   else
@@ -102,27 +98,26 @@ rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
-cp "$BUILD_DIR/${APP_NAME}-universal"  "$APP_BUNDLE/Contents/MacOS/${APP_NAME}"
-cp "$BUILD_DIR/pandoc-universal"       "$APP_BUNDLE/Contents/MacOS/pandoc"
-cp "$BUILD_DIR/md2docx.icns"          "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+cp "$BUILD_DIR/${APP_NAME}-binary"   "$APP_BUNDLE/Contents/MacOS/${APP_NAME}"
+cp "$BUILD_DIR/pandoc-universal"     "$APP_BUNDLE/Contents/MacOS/pandoc"
+cp "$BUILD_DIR/md2docx.icns"        "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
 cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleDisplayName</key>   <string>md2docx</string>
-    <key>CFBundleExecutable</key>    <string>${APP_NAME}</string>
-    <key>CFBundleIconFile</key>      <string>AppIcon</string>
-    <key>CFBundleIdentifier</key>    <string>${BUNDLE_ID}</string>
-    <key>CFBundleName</key>          <string>md2docx</string>
-    <key>CFBundlePackageType</key>   <string>APPL</string>
+    <key>CFBundleDisplayName</key>        <string>md2docx</string>
+    <key>CFBundleExecutable</key>         <string>${APP_NAME}</string>
+    <key>CFBundleIconFile</key>           <string>AppIcon</string>
+    <key>CFBundleIdentifier</key>         <string>${BUNDLE_ID}</string>
+    <key>CFBundleName</key>               <string>md2docx</string>
+    <key>CFBundlePackageType</key>        <string>APPL</string>
     <key>CFBundleShortVersionString</key> <string>${VERSION}</string>
-    <key>CFBundleVersion</key>       <string>${VERSION}</string>
-    <key>LSMinimumSystemVersion</key><string>11.0</string>
-    <key>NSHighResolutionCapable</key><true/>
-    <key>NSAppTransportSecurity</key>
-    <dict><key>NSAllowsLocalNetworking</key><true/></dict>
+    <key>CFBundleVersion</key>            <string>${VERSION}</string>
+    <key>LSMinimumSystemVersion</key>     <string>13.0</string>
+    <key>NSHighResolutionCapable</key>    <true/>
+    <key>NSPrincipalClass</key>           <string>NSApplication</string>
 </dict>
 </plist>
 PLIST
@@ -140,11 +135,9 @@ rm -f "$DMG_FINAL"
 rm -rf "$STAGING"
 mkdir -p "$STAGING"
 
-# Populate staging folder — hdiutil reads from here directly (no mount/unmount)
 cp -r "$APP_BUNDLE" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
-# Build compressed DMG straight from the folder — no writable intermediate
 hdiutil create \
   -volname "$VOLUME_NAME" \
   -srcfolder "$STAGING" \

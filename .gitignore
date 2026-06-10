@@ -5,3 +5,8 @@ md2docx-gui/md2docx-gui
 md2docx-gui/docx2pdf-gui
 md2docx/dist/
 md2docx-gui/dist/
+
+# build artifacts
+md2docx-app/
+build/
+dist/
