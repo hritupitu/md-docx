@@ -1,5 +1,5 @@
 BIN     := md2docx
-VERSION := 2.0.0
+VERSION ?= 2.0.0
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
 .PHONY: build install clean release

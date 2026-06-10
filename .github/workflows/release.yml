@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g. v2.1.0)'
+        required: true
+
+jobs:
+  # ── Build CLI + Web GUI (cross-compile, fast on Linux) ───────────────────
+  build-go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Resolve version
+        id: ver
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Build CLI
+        run: make -C md2docx release VERSION=${{ steps.ver.outputs.version }}
+
+      - name: Build Web GUI
+        run: make -C md2docx-gui release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries
+          path: |
+            md2docx/dist/*
+            md2docx-gui/dist/*
+
+  # ── Build macOS DMG (needs Xcode + macOS runner) ─────────────────────────
+  build-dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Pillow
+        run: pip install Pillow
+
+      - name: Resolve version
+        id: ver
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          fi
+          echo "version=${TAG#v}" >> $GITHUB_OUTPUT
+
+      - name: Build DMG
+        run: VERSION=${{ steps.ver.outputs.version }} bash scripts/build-dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: dist/*.dmg
+
+  # ── Create GitHub Release with all assets ────────────────────────────────
+  release:
+    needs: [build-go, build-dmg]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve tag
+        id: ver
+        run: |
+          TAG="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ inputs.tag }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | sort
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: md2docx ${{ steps.ver.outputs.tag }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/dmg/*.dmg
+            artifacts/go-binaries/md2docx/dist/*
+            artifacts/go-binaries/md2docx-gui/dist/*
+          body: |
+            ## Downloads
+
+            ### macOS App (recommended — no setup needed)
+            | File | Platform |
+            |---|---|
+            | `md2docx-*.dmg` | macOS 13+, M1/M2/M3 + Intel, Pandoc bundled |
+
+            ### Web GUI (browser-based)
+            | File | Platform |
+            |---|---|
+            | `md2docx-gui-macos-arm64` | macOS M1/M2/M3 |
+            | `md2docx-gui-macos-amd64` | macOS Intel |
+            | `md2docx-gui-linux-amd64` | Linux |
+            | `md2docx-gui-windows-amd64.exe` | Windows |
+
+            > Requires Pandoc installed: `brew install pandoc` / `sudo apt install pandoc`
+
+            ### CLI
+            | File | Platform |
+            |---|---|
+            | `md2docx-macos-arm64` | macOS M1/M2/M3 |
+            | `md2docx-macos-amd64` | macOS Intel |
+            | `md2docx-linux-amd64` | Linux |
+            | `md2docx-windows-amd64.exe` | Windows |
+
+            > **macOS:** Run `xattr -d com.apple.quarantine <binary>` on first use, or right-click → Open Anyway.

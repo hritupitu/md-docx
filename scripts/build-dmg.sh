@@ -4,7 +4,7 @@ set -euo pipefail
 
 PANDOC_VERSION="3.9.0.2"
 APP_NAME="md2docx"
-VERSION="2.0.0"
+VERSION="${VERSION:-2.0.0}"
 BUNDLE_ID="io.github.hritupitu.md2docx"
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
