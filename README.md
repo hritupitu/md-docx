@@ -1,155 +1,208 @@
-# md2docx
-
-Convert Markdown files to Word documents (`.docx`) locally — no cloud, no subscriptions. Formatting, headings, bold, lists, tables, and code blocks all come through correctly.
-
-Three ways to use it: a **native macOS app** (DMG), a **web GUI** (browser-based), and a **CLI** (terminal).
-
----
-
-## macOS App — easiest way (DMG)
-
-No Pandoc install required — it's bundled inside the app.
-
-**[⬇ Download the latest DMG](https://github.com/hritupitu/md-docx/releases/latest)**
-
-Open the DMG, drag **md2docx** to your Applications folder, and launch it.
-
-> **First launch:** macOS may block the app since it's not notarized. Go to **System Settings → Privacy & Security** and click **Open Anyway**.
-
-### How to use
-
-1. Click the drop zone to pick one or more `.md` files
-2. Optionally attach a reference `.docx` to use its Word styles and fonts
-3. Click **Convert to DOCX**
-4. A Save dialog appears for each file — choose where to save it
+<p align="center">
+  <h1 align="center">md2docx</h1>
+  <p align="center">Convert Markdown to Word documents — locally, instantly, no cloud.</p>
+  <p align="center">
+    <a href="https://github.com/hritupitu/md-docx/releases/latest"><img src="https://img.shields.io/github/v/release/hritupitu/md-docx?style=flat-square&color=00d4ff" alt="Latest release"></a>
+    <a href="https://github.com/hritupitu/md-docx/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/hritupitu/md-docx/release.yml?style=flat-square&label=build" alt="Build"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/hritupitu/md-docx?style=flat-square&color=22c55e" alt="License"></a>
+    <a href="https://github.com/hritupitu/md-docx/releases/latest"><img src="https://img.shields.io/github/downloads/hritupitu/md-docx/total?style=flat-square&color=f59e0b" alt="Downloads"></a>
+  </p>
+</p>
 
 ---
 
-## Web GUI — browser-based
+Pick your flavour:
 
-Runs a local server and opens your browser. Drag & drop files, convert, download. Shuts itself down automatically when you close the browser tab.
+| | What | Best for |
+|---|---|---|
+| 🖥 **[macOS App](#-macos-app)** | Native SwiftUI app, Pandoc bundled | Anyone on Mac — no setup |
+| 🌐 **[Web GUI](#-web-gui)** | Local browser UI, drag & drop | Cross-platform, quick use |
+| ⌨️ **[CLI](#️-cli)** | Terminal binary, batch support | Scripts, CI, power users |
 
-Requires Pandoc installed: `brew install pandoc` / `sudo apt install pandoc`
+All three run **100% locally** — your files never leave your machine.
+
+---
+
+## 🖥 macOS App
+
+The easiest way. Pandoc is bundled — nothing else to install.
+
+**[⬇ Download latest .dmg](https://github.com/hritupitu/md-docx/releases/latest)**
+
+1. Open the DMG and drag **md2docx** to Applications
+2. Launch it — click to pick `.md` files, hit **Convert**, save your `.docx`
+
+> First launch: macOS will say the app is unverified. Go to **System Settings → Privacy & Security → Open Anyway**.
+
+**Requires macOS 13+.** Works on Apple Silicon and Intel.
+
+---
+
+## 🌐 Web GUI
+
+A local HTTP server that opens in your browser. Drag & drop files, convert, download. The server shuts itself down automatically when you close the tab.
+
+Requires [Pandoc](https://pandoc.org/installing.html) installed on your system.
 
 ### Install
 
-**macOS (M1/M2/M3)**
+<details>
+<summary><strong>macOS</strong></summary>
+
 ```bash
+# Apple Silicon
 curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-macos-arm64 -o md2docx-gui
-chmod +x md2docx-gui && xattr -d com.apple.quarantine md2docx-gui
-sudo mv md2docx-gui /usr/local/bin/md2docx-gui
-```
 
-**macOS (Intel)**
-```bash
+# Intel
 curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-macos-amd64 -o md2docx-gui
-chmod +x md2docx-gui && xattr -d com.apple.quarantine md2docx-gui
-sudo mv md2docx-gui /usr/local/bin/md2docx-gui
-```
 
-**Linux**
+chmod +x md2docx-gui
+xattr -d com.apple.quarantine md2docx-gui
+sudo mv md2docx-gui /usr/local/bin/md2docx-gui
+
+brew install pandoc
+```
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
 ```bash
 curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-linux-amd64 -o md2docx-gui
 chmod +x md2docx-gui
 sudo mv md2docx-gui /usr/local/bin/md2docx-gui
+
+sudo apt install pandoc  # or dnf, pacman, etc.
 ```
+</details>
 
-**Windows** — download [`md2docx-gui-windows-amd64.exe`](https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-windows-amd64.exe) and run it directly.
+<details>
+<summary><strong>Windows</strong></summary>
 
-Then just run:
+Download [`md2docx-gui-windows-amd64.exe`](https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-gui-windows-amd64.exe) and run it directly.
+
+Install Pandoc: `winget install JohnMacFarlane.Pandoc`
+</details>
+
+### Run
+
 ```bash
 md2docx-gui
+# Your browser opens automatically at http://127.0.0.1:<port>
 ```
-
-Your browser opens automatically.
 
 ---
 
-## CLI — for terminal users
+## ⌨️ CLI
 
-If Pandoc isn't installed, the CLI will offer to install it automatically on first run.
+Batch convert, scriptable, works everywhere. Offers to auto-install Pandoc if it's not found.
 
 ### Install
 
-**macOS (M1/M2/M3)**
+<details>
+<summary><strong>macOS</strong></summary>
+
 ```bash
+# Apple Silicon
 curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-macos-arm64 -o md2docx
-chmod +x md2docx && xattr -d com.apple.quarantine md2docx
-sudo mv md2docx /usr/local/bin/md2docx
-```
 
-**macOS (Intel)**
-```bash
+# Intel
 curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-macos-amd64 -o md2docx
-chmod +x md2docx && xattr -d com.apple.quarantine md2docx
+
+chmod +x md2docx
+xattr -d com.apple.quarantine md2docx
 sudo mv md2docx /usr/local/bin/md2docx
 ```
+</details>
 
-**Linux**
+<details>
+<summary><strong>Linux</strong></summary>
+
 ```bash
 curl -L https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-linux-amd64 -o md2docx
 chmod +x md2docx
 sudo mv md2docx /usr/local/bin/md2docx
 ```
+</details>
 
-**Windows** — download [`md2docx-windows-amd64.exe`](https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-windows-amd64.exe), rename to `md2docx.exe`, and add to your PATH.
+<details>
+<summary><strong>Windows</strong></summary>
+
+Download [`md2docx-windows-amd64.exe`](https://github.com/hritupitu/md-docx/releases/latest/download/md2docx-windows-amd64.exe), rename to `md2docx.exe`, and add to your PATH.
+</details>
 
 ### Usage
 
 ```bash
-md2docx notes.md                          # single file, saved next to input
-md2docx -o ~/Desktop notes.md             # save to a specific folder
-md2docx *.md                              # batch convert
-md2docx -ref my-template.docx *.md       # use a reference .docx for Word styles
+md2docx notes.md                        # convert a single file
+md2docx *.md                            # batch convert a folder
+md2docx -o ~/Desktop report.md          # specify output directory
+md2docx -ref template.docx *.md         # apply Word styles from a reference doc
+md2docx -j 8 *.md                       # batch with 8 parallel workers
 ```
 
 ### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `-o <dir>` | same folder as input | Where to save the `.docx` files |
-| `-ref <file>` | none | Reference `.docx` for custom Word styles/fonts |
-| `-j <n>` | `4` | Parallel workers for batch conversion |
-| `-q` | off | Quiet mode, only print output paths |
+| `-o <dir>` | next to input file | Output directory for `.docx` files |
+| `-ref <file>` | — | Reference `.docx` whose styles and fonts are applied |
+| `-j <n>` | `4` | Number of parallel workers for batch jobs |
+| `-q` | off | Quiet — only print output paths, no progress UI |
 | `--version` | | Print version and exit |
 
 ---
 
-## What gets converted
+## What converts
 
-| Markdown | Word output |
+| Markdown | Word |
 |---|---|
-| `# Heading 1` | Heading 1 style |
-| `**bold**` | Bold |
-| `*italic*` | Italic |
-| `- list item` | Bulleted list |
-| `1. item` | Numbered list |
-| `` `code` `` | Inline code |
-| ```` ``` ```` code block | Code block |
+| `# H1` / `## H2` / `### H3` | Heading styles |
+| `**bold**` / `*italic*` | Bold / Italic |
+| `- item` / `1. item` | Bullet / Numbered list |
+| `` `inline code` `` | Inline code |
+| ```` ```lang ```` block | Code block |
+| `> blockquote` | Block quote |
 | `\| table \|` | Word table |
-| `[link](url)` | Hyperlink |
+| `[text](url)` | Hyperlink |
+| `![alt](img)` | Embedded image |
 
 ---
 
-## Build from source
+## Building from source
+
+**Requirements:** Go 1.21+ for the CLI and web GUI. Xcode 15+ for the macOS app.
 
 ```bash
 git clone https://github.com/hritupitu/md-docx.git
 cd md-docx
 ```
 
-**macOS App** (requires Xcode 15+)
 ```bash
-bash scripts/build-dmg.sh
-# output: dist/md2docx-<version>.dmg
-```
-
-**Web GUI** (requires Go 1.21+)
-```bash
-cd md2docx-gui && go build -o md2docx-gui .
-```
-
-**CLI** (requires Go 1.21+)
-```bash
+# CLI
 cd md2docx && go build -o md2docx .
+
+# Web GUI
+cd md2docx-gui && go build -o md2docx-gui .
+
+# macOS DMG (downloads and bundles Pandoc automatically)
+bash scripts/build-dmg.sh
 ```
+
+Releases are built automatically by [GitHub Actions](.github/workflows/release.yml) on every version tag. To cut a release:
+
+```bash
+git tag v2.1.0 && git push origin v2.1.0
+```
+
+---
+
+## Contributing
+
+PRs are welcome. Open an issue first for anything beyond small fixes so we can agree on the approach.
+
+---
+
+## License
+
+[MIT](LICENSE)
