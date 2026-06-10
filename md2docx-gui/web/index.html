@@ -250,8 +250,6 @@
   let converting = false;
   let downloadTokens = [];
 
-  setInterval(() => fetch('/heartbeat', { method: 'POST' }).catch(() => {}), 4000);
-
   (async () => {
     const badge = document.getElementById('pandoc-badge');
     try {

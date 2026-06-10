@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	webview "github.com/webview/webview_go"
 )
 
 //go:embed web
@@ -30,21 +32,17 @@ type uploadedFile struct {
 
 type job struct {
 	files  []uploadedFile
-	refDoc string // optional reference .docx path
+	refDoc string
 }
 
 var (
 	jobs      sync.Map
 	downloads sync.Map
-
-	shutdownMu    sync.Mutex
-	shutdownTimer *time.Timer
-	server        *http.Server
+	server    *http.Server
 )
 
-const heartbeatTimeout = 12 * time.Second
-
 func main() {
+	// Pick a free port
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -53,56 +51,42 @@ func main() {
 	port := ln.Addr().(*net.TCPAddr).Port
 	ln.Close()
 
+	// Start HTTP server in background
 	mux := http.NewServeMux()
 	webFS, _ := fs.Sub(webFiles, "web")
 	mux.Handle("/", http.FileServer(http.FS(webFS)))
 	mux.HandleFunc("/upload", handleUpload)
 	mux.HandleFunc("/events", handleEvents)
 	mux.HandleFunc("/download", handleDownload)
-	mux.HandleFunc("/heartbeat", handleHeartbeat)
 	mux.HandleFunc("/check", handleCheck)
 
 	server = &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", port), Handler: mux}
+	go server.ListenAndServe()
 
+	// Open native webview window on the main thread
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
-	fmt.Println("md2docx →", url)
-	fmt.Println("Close the browser tab to quit.")
+	w := webview.New(false)
+	defer w.Destroy()
+	w.SetTitle("md2docx")
+	w.SetSize(660, 780, webview.HintNone)
+	w.Navigate(url)
+	w.Run() // blocks until window is closed
 
-	resetShutdownTimer()
-	go openBrowser(url)
+	// Window closed — clean up
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	server.Shutdown(ctx)
 
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-func resetShutdownTimer() {
-	shutdownMu.Lock()
-	defer shutdownMu.Unlock()
-	if shutdownTimer != nil {
-		shutdownTimer.Reset(heartbeatTimeout)
-		return
-	}
-	shutdownTimer = time.AfterFunc(heartbeatTimeout, func() {
-		fmt.Println("Browser tab closed. Shutting down.")
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		server.Shutdown(ctx)
-		jobs.Range(func(_, v any) bool {
-			j := v.(*job)
-			if len(j.files) > 0 {
-				os.RemoveAll(filepath.Dir(j.files[0].tmpPath))
-			}
-			return true
-		})
+	jobs.Range(func(_, v any) bool {
+		j := v.(*job)
+		if len(j.files) > 0 {
+			os.RemoveAll(filepath.Dir(j.files[0].tmpPath))
+		}
+		return true
 	})
 }
 
-func handleHeartbeat(w http.ResponseWriter, r *http.Request) {
-	resetShutdownTimer()
-	w.WriteHeader(http.StatusOK)
-}
+// ── dependency check ──────────────────────────────────────────────────────────
 
 func handleCheck(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -130,6 +114,8 @@ func installHint() string {
 	return "https://pandoc.org/installing.html"
 }
 
+// ── upload ────────────────────────────────────────────────────────────────────
+
 func handleUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -148,7 +134,6 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	j := &job{}
 
-	// optional reference doc for custom Word styles
 	if refFiles := r.MultipartForm.File["ref"]; len(refFiles) > 0 {
 		fh := refFiles[0]
 		f, _ := fh.Open()
@@ -188,6 +173,8 @@ func handleUpload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"jobId": id})
 }
+
+// ── SSE conversion stream ─────────────────────────────────────────────────────
 
 func handleEvents(w http.ResponseWriter, r *http.Request) {
 	val, ok := jobs.Load(r.URL.Query().Get("job"))
@@ -254,6 +241,8 @@ func handleEvents(w http.ResponseWriter, r *http.Request) {
 	send(map[string]any{"type": "complete"})
 }
 
+// ── download ──────────────────────────────────────────────────────────────────
+
 func handleDownload(w http.ResponseWriter, r *http.Request) {
 	val, ok := downloads.Load(r.URL.Query().Get("token"))
 	if !ok {
@@ -266,8 +255,10 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, path)
 }
 
+// ── pandoc ────────────────────────────────────────────────────────────────────
+
 func findPandoc() string {
-	// Check alongside this binary first — works when bundled in a .app
+	// Check alongside this binary first (app bundle)
 	if exe, err := os.Executable(); err == nil {
 		bundled := filepath.Join(filepath.Dir(exe), "pandoc")
 		if _, err := os.Stat(bundled); err == nil {
@@ -289,21 +280,7 @@ func findPandoc() string {
 	return ""
 }
 
-func openBrowser(url string) {
-	time.Sleep(350 * time.Millisecond)
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	}
-	if cmd != nil {
-		cmd.Run()
-	}
-}
+// ── helpers ───────────────────────────────────────────────────────────────────
 
 func newID() string {
 	b := make([]byte, 16)
