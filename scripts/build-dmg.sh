@@ -19,24 +19,17 @@ ok()   { echo -e "${GREEN}✔${NC}  $1"; }
 warn() { echo -e "${YELLOW}⚠${NC}  $1"; }
 step() { echo -e "\n${BOLD}$1${NC}"; }
 
-step "── 1 / 5  Build Go binary (universal) ──────────────────────────────"
+step "── 1 / 5  Build Go binary ───────────────────────────────────────────"
 mkdir -p "$BUILD_DIR" "$DIST_DIR"
 TMPDIR_GO=/tmp/gobuild; mkdir -p $TMPDIR_GO
 
-log "Compiling arm64…"
-TMPDIR=$TMPDIR_GO GOOS=darwin GOARCH=arm64 \
-  go build -C "$GUI_DIR" -ldflags="-s -w" -o "$BUILD_DIR/${APP_NAME}-arm64" .
-
-log "Compiling amd64…"
-TMPDIR=$TMPDIR_GO GOOS=darwin GOARCH=amd64 \
-  go build -C "$GUI_DIR" -ldflags="-s -w" -o "$BUILD_DIR/${APP_NAME}-amd64" .
-
-log "Merging into universal binary…"
-lipo -create \
-  "$BUILD_DIR/${APP_NAME}-arm64" \
-  "$BUILD_DIR/${APP_NAME}-amd64" \
-  -output "$BUILD_DIR/${APP_NAME}-universal"
-ok "Go universal binary ready"
+NATIVE_ARCH=$(uname -m | sed 's/x86_64/amd64/;s/arm64/arm64/')
+log "Compiling for ${NATIVE_ARCH} (native)…"
+# CGO is required by webview — cross-compilation needs a full cross toolchain.
+# Build for the current machine's architecture only.
+TMPDIR=$TMPDIR_GO CGO_ENABLED=1 GOOS=darwin GOARCH="${NATIVE_ARCH}" \
+  go build -C "$GUI_DIR" -ldflags="-s -w" -o "$BUILD_DIR/${APP_NAME}-universal" .
+ok "Go binary ready (darwin/${NATIVE_ARCH})"
 
 step "── 2 / 5  Download & bundle Pandoc ${PANDOC_VERSION} ─────────────────────"
 
@@ -127,8 +120,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
     <key>CFBundleShortVersionString</key> <string>${VERSION}</string>
     <key>CFBundleVersion</key>       <string>${VERSION}</string>
     <key>LSMinimumSystemVersion</key><string>11.0</string>
-    <key>LSUIElement</key>           <true/>
     <key>NSHighResolutionCapable</key><true/>
+    <key>NSAppTransportSecurity</key>
+    <dict><key>NSAllowsLocalNetworking</key><true/></dict>
 </dict>
 </plist>
 PLIST
